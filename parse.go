@@ -48,15 +48,17 @@ type symbol struct {
 	not  bool
 }
 
-type logicNode struct {
+//LogicNode : nodingForLogic
+type LogicNode struct {
 	token  LogicToken
-	left   *logicNode
-	right  *logicNode
-	parent *logicNode
+	left   *LogicNode
+	right  *LogicNode
+	parent *LogicNode
+	result TriBool
 }
 
 type logicTree struct {
-	root *logicNode
+	root *LogicNode
 }
 
 //StatementType : statement type.
@@ -133,18 +135,20 @@ func (sym *symbol) CopyToken() LogicToken {
 	return &newSym
 }
 
-func parseNode(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode) {
+func parseNode(parent **LogicNode, tokens *[]string, ref *map[byte][]*LogicNode) {
 	if len(*tokens) == 0 {
 		log.Fatalf("expected value but suddenly ended\n")
 	} else if len(*tokens) == 1 {
 		log.Fatalf("the incomplete statement ending with: %s\n", (*tokens)[0])
 	}
-	*parent = &logicNode{}
+	*parent = &LogicNode{}
+	(*parent).result = Unknown
 	(*parent).token = new(Operator)
 	(*parent).token.AssignToken((*tokens)[0])
 	*tokens = (*tokens)[1:]
 	if (*parent).token.GetToken() == '+' {
-		(*parent).right = &logicNode{}
+		(*parent).right = &LogicNode{}
+		(*parent).right.result = Unknown
 		(*parent).right.token = new(symbol)
 		(*parent).right.token.AssignToken((*tokens)[0])
 		(*ref)[(*parent).right.token.GetToken()] = append((*ref)[(*parent).right.token.GetToken()], (*parent).right)
@@ -156,11 +160,12 @@ func parseNode(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode)
 	}
 }
 
-func parseTree(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode) {
+func parseTree(parent **LogicNode, tokens *[]string, ref *map[byte][]*LogicNode) {
 	if len(*tokens) == 0 {
 		log.Fatalf("no tokens were found\n")
 	}
-	*parent = &logicNode{}
+	*parent = &LogicNode{}
+	(*parent).result = Unknown
 	(*parent).token = &symbol{}
 	(*parent).token.AssignToken((*tokens)[0])
 	(*ref)[(*parent).token.GetToken()] = append((*ref)[(*parent).token.GetToken()], *parent)
@@ -175,8 +180,9 @@ func parseTree(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode)
 	}
 }
 
-func copyLogicNode(node *logicNode, ref *map[byte][]*logicNode) *logicNode {
-	newNode := &logicNode{}
+func copyLogicNode(node *LogicNode, ref *map[byte][]*LogicNode) *LogicNode {
+	newNode := &LogicNode{}
+	newNode.result = Unknown
 	newNode.token = node.token.CopyToken()
 	if node.left != nil {
 		newNode.left = copyLogicNode(node.left, ref)
@@ -197,7 +203,7 @@ type Input struct {
 	rules    []statement
 	facts    []symbol
 	query    []symbol
-	refSheet map[byte][]*logicNode
+	refSheet map[byte][]*LogicNode
 }
 
 //ParseFile : runs read file and parses.
@@ -212,7 +218,7 @@ func ParseFile(path string) Input {
 	lines := strings.Split(string(data), "\n")
 	//ref sheets for each variables.
 	var result Input
-	result.refSheet = make(map[byte][]*logicNode)
+	result.refSheet = make(map[byte][]*LogicNode)
 	for _, line := range lines {
 		//skip empty lines. Takes Special actions on query and facts.
 		if line == "" || line == "\r" {

@@ -22,7 +22,21 @@ const (
 	Unknown TriBool = 2
 )
 
-//SolveLogics : solves and returns truth table.
+//SolveLogics : solves and returns fact table.
 func SolveLogics(input Input) map[byte]TriBool {
-	return make(map[byte]TriBool)
+	factTable := make(map[byte]TriBool)
+	for b := range input.refSheet {
+		factTable[b] = Unknown
+	}
+	checkQueue := make([]*LogicNode, 0, len(input.facts))
+	for _, sym := range input.facts {
+		if factTable[sym.name] == Unknown {
+			factTable[sym.name] = True
+			checkQueue = append(checkQueue, input.refSheet[sym.name]...)
+			for _, ref := range input.refSheet[sym.name] {
+				ref.result = True
+			}
+		}
+	}
+	return factTable
 }
