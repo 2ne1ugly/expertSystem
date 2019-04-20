@@ -91,6 +91,7 @@ func (sym *symbol) AssignToken(str string) {
 		('A' <= char && char <= 'Z')) {
 		log.Fatalf("not an alphabet: %c\n", char)
 	}
+	sym.name = char
 }
 
 //AssignToken : assign values from the token
@@ -120,43 +121,43 @@ func (sym *symbol) GetToken() byte {
 	return byte(sym.name)
 }
 
-func parseNode(parent **logicNode, tokens []string) {
-	if len(tokens) == 0 {
+func parseNode(parent **logicNode, tokens *[]string) {
+	if len(*tokens) == 0 {
 		log.Fatalf("expected value but suddenly ended\n")
-	} else if len(tokens) == 1 {
-		log.Fatalf("the incomplete statement ending with: %s\n", tokens[0])
+	} else if len(*tokens) == 1 {
+		log.Fatalf("the incomplete statement ending with: %s\n", (*tokens)[0])
 	}
 	*parent = &logicNode{}
 	(*parent).token = new(Operator)
-	(*parent).token.AssignToken(tokens[0])
-	tokens = tokens[1:]
+	(*parent).token.AssignToken((*tokens)[0])
+	*tokens = (*tokens)[1:]
 	if (*parent).token.GetToken() == '+' {
 		(*parent).right = &logicNode{}
 		(*parent).right.token = new(symbol)
-		(*parent).right.token.AssignToken(tokens[0])
+		(*parent).right.token.AssignToken((*tokens)[0])
 		(*parent).right.parent = (*parent)
-		tokens = tokens[1:]
+		*tokens = (*tokens)[1:]
 	} else {
-		parseNode(&(*parent).right, tokens)
+		parseTree(&(*parent).right, tokens)
 		(*parent).right.parent = (*parent)
 	}
 }
 
-func (tree *logicTree) parseTree(str string) {
-	spearteByNodes := regexp.MustCompile("[+|^]|[^+|^]*")
-	tokens := spearteByNodes.FindAllString(str, -1)
-	if len(tokens) == 0 {
-		log.Fatalf("not a proper statement: %s\n", str)
+func parseTree(parent **logicNode, tokens *[]string) {
+	if len(*tokens) == 0 {
+		log.Fatalf("no tokens were found\n")
 	}
-	tree.root = &logicNode{}
-	tree.root.token = &symbol{}
-	tree.root.token.AssignToken(tokens[0])
-	tokens = tokens[1:]
-	for len(tokens) != 0 {
-		temp := tree.root.left
-		parseNode(&tree.root, tokens)
-		tree.root.left = temp
-		temp.parent = tree.root
+	*parent = &logicNode{}
+	(*parent).token = &symbol{}
+	(*parent).token.AssignToken((*tokens)[0])
+	*tokens = (*tokens)[1:]
+	for len(*tokens) != 0 {
+		temp := (*parent).left
+		parseNode(parent, tokens)
+		(*parent).left = temp
+		if temp != nil {
+			temp.parent = (*parent)
+		}
 	}
 }
 
@@ -192,11 +193,14 @@ func ParseFile(path string) Input {
 		} else {
 			eq := strings.Split(line, "=>")
 			if len(eq) != 2 {
-				log.Fatalf("incorrect syntex : %s", line)
+				log.Fatalf("incorrect syntex : %s\n", line)
 			}
 			var rule proposition
-			rule.expr.parseTree(eq[0])
-			rule.concl.parseTree(eq[1])
+			spearteByNodes := regexp.MustCompile("[+|^]|[^+|^]*").FindAllString
+			tokens := spearteByNodes(eq[0], -1)
+			parseTree(&rule.expr.root, &tokens)
+			tokens = spearteByNodes(eq[1], -1)
+			parseTree(&rule.concl.root, &tokens)
 			result.rules = append(result.rules, rule)
 			print(line, "\n")
 		}
