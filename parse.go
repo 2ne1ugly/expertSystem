@@ -36,20 +36,11 @@ const (
 	Xor Operator = '^'
 )
 
-//TriBool : enum for three results
-type TriBool int
-
-//types of result
-const (
-	False   TriBool = 0
-	True    TriBool = 1
-	Unknown TriBool = 2
-)
-
 //LogicToken : tokens for tree
 type LogicToken interface {
 	AssignToken(str string)
 	GetToken() byte
+	CopyToken() LogicToken
 }
 
 type symbol struct {
@@ -68,9 +59,18 @@ type logicTree struct {
 	root *logicNode
 }
 
-type proposition struct {
-	expr  logicTree
-	concl logicTree
+//StatementType : statement type.
+type StatementType int
+
+const (
+	proposition    StatementType = 0
+	contrapositive StatementType = 1
+)
+
+type statement struct {
+	expr      logicTree
+	concl     logicTree
+	stateType StatementType
 }
 
 func (sym *symbol) AssignToken(str string) {
@@ -121,7 +121,19 @@ func (sym *symbol) GetToken() byte {
 	return byte(sym.name)
 }
 
-func parseNode(parent **logicNode, tokens *[]string) {
+//CopyToken : get token char.
+func (op *Operator) CopyToken() LogicToken {
+	newOp := *op
+	return &newOp
+}
+
+//CopyToken : get token char.
+func (sym *symbol) CopyToken() LogicToken {
+	newSym := *sym
+	return &newSym
+}
+
+func parseNode(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode) {
 	if len(*tokens) == 0 {
 		log.Fatalf("expected value but suddenly ended\n")
 	} else if len(*tokens) == 1 {
@@ -135,25 +147,27 @@ func parseNode(parent **logicNode, tokens *[]string) {
 		(*parent).right = &logicNode{}
 		(*parent).right.token = new(symbol)
 		(*parent).right.token.AssignToken((*tokens)[0])
+		(*ref)[(*parent).right.token.GetToken()] = append((*ref)[(*parent).right.token.GetToken()], (*parent).right)
 		(*parent).right.parent = (*parent)
 		*tokens = (*tokens)[1:]
 	} else {
-		parseTree(&(*parent).right, tokens)
+		parseTree(&(*parent).right, tokens, ref)
 		(*parent).right.parent = (*parent)
 	}
 }
 
-func parseTree(parent **logicNode, tokens *[]string) {
+func parseTree(parent **logicNode, tokens *[]string, ref *map[byte][]*logicNode) {
 	if len(*tokens) == 0 {
 		log.Fatalf("no tokens were found\n")
 	}
 	*parent = &logicNode{}
 	(*parent).token = &symbol{}
 	(*parent).token.AssignToken((*tokens)[0])
+	(*ref)[(*parent).token.GetToken()] = append((*ref)[(*parent).token.GetToken()], *parent)
 	*tokens = (*tokens)[1:]
 	for len(*tokens) != 0 {
-		temp := (*parent).left
-		parseNode(parent, tokens)
+		temp := *parent
+		parseNode(parent, tokens, ref)
 		(*parent).left = temp
 		if temp != nil {
 			temp.parent = (*parent)
@@ -161,11 +175,29 @@ func parseTree(parent **logicNode, tokens *[]string) {
 	}
 }
 
+func copyLogicNode(node *logicNode, ref *map[byte][]*logicNode) *logicNode {
+	newNode := &logicNode{}
+	newNode.token = node.token.CopyToken()
+	if node.left != nil {
+		newNode.left = copyLogicNode(node.left, ref)
+		newNode.left.parent = newNode
+	}
+	if node.right != nil {
+		newNode.right = copyLogicNode(node.right, ref)
+		newNode.right.parent = newNode
+	}
+	if node.left == nil && node.right == nil {
+		(*ref)[newNode.token.GetToken()] = append((*ref)[newNode.token.GetToken()], newNode)
+	}
+	return newNode
+}
+
 //Input : input files
 type Input struct {
-	rules []proposition
-	facts []symbol
-	query []symbol
+	rules    []statement
+	facts    []symbol
+	query    []symbol
+	refSheet map[byte][]*logicNode
 }
 
 //ParseFile : runs read file and parses.
@@ -178,8 +210,11 @@ func ParseFile(path string) Input {
 	file = deleteSpaces.ReplaceAll(file, []byte(""))
 	data := strings.ReplaceAll(string(file), "\t", "")
 	lines := strings.Split(string(data), "\n")
+	//ref sheets for each variables.
 	var result Input
+	result.refSheet = make(map[byte][]*logicNode)
 	for _, line := range lines {
+		//skip empty lines. Takes Special actions on query and facts.
 		if line == "" || line == "\r" {
 			continue
 		} else if line[0] == '=' {
@@ -191,17 +226,48 @@ func ParseFile(path string) Input {
 				result.query = append(result.query, symbol{line[i], false})
 			}
 		} else {
-			eq := strings.Split(line, "=>")
-			if len(eq) != 2 {
+			var eq []string
+			if strings.Contains(line, "<=>") {
+				eq = strings.Split(line, "<=>")
+				if len(eq) != 2 {
+					log.Fatalf("incorrect syntex : %s\n", line)
+				}
+			} else if strings.Contains(line, "=>") {
+				eq = strings.Split(line, "=>")
+				if len(eq) != 2 {
+					log.Fatalf("incorrect syntex : %s\n", line)
+				}
+			} else {
 				log.Fatalf("incorrect syntex : %s\n", line)
 			}
-			var rule proposition
+			var prop statement
+			var contr statement
 			spearteByNodes := regexp.MustCompile("[+|^]|[^+|^]*").FindAllString
+			//split as expr, conlcusion.
 			tokens := spearteByNodes(eq[0], -1)
-			parseTree(&rule.expr.root, &tokens)
+			parseTree(&prop.expr.root, &tokens, &result.refSheet)
 			tokens = spearteByNodes(eq[1], -1)
-			parseTree(&rule.concl.root, &tokens)
-			result.rules = append(result.rules, rule)
+			parseTree(&prop.concl.root, &tokens, &result.refSheet)
+			prop.stateType = proposition
+			result.rules = append(result.rules, prop)
+			//create contrapositive by copying previous proposition.
+			contr.expr.root = copyLogicNode(prop.concl.root, &result.refSheet)
+			contr.concl.root = copyLogicNode(prop.expr.root, &result.refSheet)
+			contr.stateType = contrapositive
+			result.rules = append(result.rules, contr)
+			//additional work for only-if cases.
+			if strings.Contains(line, "<=>") {
+				var prop2 statement
+				var contr2 statement
+				prop2.expr.root = copyLogicNode(prop.concl.root, &result.refSheet)
+				prop2.concl.root = copyLogicNode(prop.expr.root, &result.refSheet)
+				prop2.stateType = proposition
+				contr2.expr.root = copyLogicNode(contr.concl.root, &result.refSheet)
+				contr2.concl.root = copyLogicNode(contr.expr.root, &result.refSheet)
+				prop2.stateType = contrapositive
+				result.rules = append(result.rules, prop2)
+				result.rules = append(result.rules, contr2)
+			}
 			print(line, "\n")
 		}
 	}
