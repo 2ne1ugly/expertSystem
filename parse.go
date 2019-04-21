@@ -37,9 +37,18 @@ func parseNode(parent **LogicNode, tokens *[]string) {
 	(*parent).token.AssignToken((*tokens)[0])
 	*tokens = (*tokens)[1:]
 	if (*parent).token.GetToken() == '+' {
-		(*parent).right = &LogicNode{}
-		(*parent).right.token = new(Symbol)
-		(*parent).right.token.AssignToken((*tokens)[0])
+		if (*tokens)[0] == "!" {
+			subTreeToken := (*tokens)[1:2]
+			parseTree(&(*parent).right, &subTreeToken)
+			(*parent).right = makeNot((*parent).right)
+		} else if (*tokens)[0][0] == '(' {
+			miniTreeTokens := separateStringsToTokens((*tokens)[0][1 : len((*tokens)[0])-2])
+			parseTree(&(*parent).right, &miniTreeTokens)
+		} else {
+			(*parent).right = &LogicNode{}
+			(*parent).right.token = new(Symbol)
+			(*parent).right.token.AssignToken((*tokens)[0])
+		}
 		(*parent).right.parent = (*parent)
 		*tokens = (*tokens)[1:]
 	} else {
@@ -52,9 +61,19 @@ func parseTree(parent **LogicNode, tokens *[]string) {
 	if len(*tokens) == 0 {
 		log.Fatalf("no tokens were found\n")
 	}
-	*parent = &LogicNode{}
-	(*parent).token = new(Symbol)
-	(*parent).token.AssignToken((*tokens)[0])
+	if (*tokens)[0] == "!" {
+		subTreeToken := (*tokens)[1:2]
+		parseTree(parent, &subTreeToken)
+		*parent = makeNot(*parent)
+		*tokens = (*tokens)[1:]
+	} else if (*tokens)[0][0] == '(' {
+		miniTreeTokens := separateStringsToTokens((*tokens)[0][1 : len((*tokens)[0])-2])
+		parseTree(parent, &miniTreeTokens)
+	} else {
+		*parent = &LogicNode{}
+		(*parent).token = new(Symbol)
+		(*parent).token.AssignToken((*tokens)[0])
+	}
 	*tokens = (*tokens)[1:]
 	for len(*tokens) != 0 {
 		temp := *parent
@@ -77,6 +96,15 @@ func copyLogicNode(node *LogicNode) *LogicNode {
 		newNode.right = copyLogicNode(node.right)
 		newNode.right.parent = newNode
 	}
+	return newNode
+}
+
+func makeNot(node *LogicNode) *LogicNode {
+	newNode := &LogicNode{}
+	newNode.left = node
+	node.parent = newNode
+	newNode.token = new(Operator)
+	newNode.token.AssignToken("!")
 	return newNode
 }
 
@@ -106,6 +134,9 @@ func separateStringsToTokens(str string) []string {
 				if c == 0 {
 					break
 				}
+			}
+			if c != 0 {
+				log.Fatalf("incomplete bracket: %s\n", str)
 			}
 			tokens = append(tokens, str[start:i])
 		}
@@ -161,8 +192,8 @@ func ParseFile(path string) Input {
 			parseTree(&prop.concl.root, &tokens)
 			result.rules = append(result.rules, prop)
 			//create contrapositive by copying previous proposition.
-			contr.expr.root = copyLogicNode(prop.concl.root)
-			contr.concl.root = copyLogicNode(prop.expr.root)
+			contr.expr.root = makeNot(copyLogicNode(prop.concl.root))
+			contr.concl.root = makeNot(copyLogicNode(prop.expr.root))
 			result.rules = append(result.rules, contr)
 			//additional work for only-if cases.
 			if strings.Contains(line, "<=>") {
@@ -170,8 +201,8 @@ func ParseFile(path string) Input {
 				var contr2 Statement
 				prop2.expr.root = copyLogicNode(prop.concl.root)
 				prop2.concl.root = copyLogicNode(prop.expr.root)
-				contr2.expr.root = copyLogicNode(contr.concl.root)
-				contr2.concl.root = copyLogicNode(contr.expr.root)
+				contr2.expr.root = makeNot(copyLogicNode(contr.concl.root))
+				contr2.concl.root = makeNot(copyLogicNode(contr.expr.root))
 				result.rules = append(result.rules, prop2)
 				result.rules = append(result.rules, contr2)
 			}

@@ -73,6 +73,7 @@ func (op *Operator) AssignToken(str string) {
 	if !(str[0] == '+' || str[0] == '|' || str[0] == '^' || str[0] == '!') {
 		log.Fatalf("not an operator: %c\n", str[0])
 	}
+	*op = Operator(str[0])
 }
 
 //GetToken : get token char.
