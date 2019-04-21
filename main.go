@@ -27,8 +27,8 @@ func main() {
 	factMap := SolveLogics(input)
 	fmt.Printf("\nqueries:\n")
 	for _, sym := range input.query {
-		fmt.Printf("%c is ", sym.name)
-		switch factMap[sym.name] {
+		fmt.Printf("%c is ", sym)
+		switch factMap[sym] {
 		case True:
 			fmt.Printf("True\n")
 		case False:

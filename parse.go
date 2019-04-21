@@ -26,153 +26,39 @@ func CheckError(err error) {
 	}
 }
 
-//Operator : enum for operator types
-type Operator byte
-
-//types of operation
-const (
-	And Operator = '+'
-	Or  Operator = '|'
-	Xor Operator = '^'
-)
-
-//LogicToken : tokens for tree
-type LogicToken interface {
-	AssignToken(str string)
-	GetToken() byte
-	CopyToken() LogicToken
-}
-
-type symbol struct {
-	name byte
-	not  bool
-}
-
-//LogicNode : nodingForLogic
-type LogicNode struct {
-	token  LogicToken
-	left   *LogicNode
-	right  *LogicNode
-	parent *LogicNode
-	result TriBool
-}
-
-type logicTree struct {
-	root *LogicNode
-}
-
-//StatementType : statement type.
-type StatementType int
-
-const (
-	proposition    StatementType = 0
-	contrapositive StatementType = 1
-)
-
-type statement struct {
-	expr      logicTree
-	concl     logicTree
-	stateType StatementType
-}
-
-func (sym *symbol) AssignToken(str string) {
-	if len(str) > 2 {
-		log.Fatalf("following is not a proper symbol: %s\n", str)
-	}
-	var char byte
-	if len(str) == 2 {
-		if str[0] != '!' {
-			log.Fatalf("following has length of 2 but do not start with '!': %s\n", str)
-		}
-		sym.not = true
-		char = str[1]
-	} else {
-		char = str[0]
-	}
-	if !(('a' <= char && char <= 'z') ||
-		('A' <= char && char <= 'Z')) {
-		log.Fatalf("not an alphabet: %c\n", char)
-	}
-	sym.name = char
-}
-
-//AssignToken : assign values from the token
-func (op *Operator) AssignToken(str string) {
-	if len(str) != 1 {
-		log.Fatalf("following is not a proper operator: %s\n", str)
-	}
-	switch str[0] {
-	case '+':
-		*op = And
-	case '|':
-		*op = Or
-	case '^':
-		*op = Xor
-	default:
-		log.Fatalf("following is not a proper operator: %s\n", str)
-	}
-}
-
-//GetToken : get token char.
-func (op *Operator) GetToken() byte {
-	return byte(*op)
-}
-
-//GetToken : get token char.
-func (sym *symbol) GetToken() byte {
-	return byte(sym.name)
-}
-
-//CopyToken : get token char.
-func (op *Operator) CopyToken() LogicToken {
-	newOp := *op
-	return &newOp
-}
-
-//CopyToken : get token char.
-func (sym *symbol) CopyToken() LogicToken {
-	newSym := *sym
-	return &newSym
-}
-
-func parseNode(parent **LogicNode, tokens *[]string, ref *map[byte][]*LogicNode) {
+func parseNode(parent **LogicNode, tokens *[]string) {
 	if len(*tokens) == 0 {
 		log.Fatalf("expected value but suddenly ended\n")
 	} else if len(*tokens) == 1 {
-		log.Fatalf("the incomplete statement ending with: %s\n", (*tokens)[0])
+		log.Fatalf("the incomplete Statement ending with: %s\n", (*tokens)[0])
 	}
 	*parent = &LogicNode{}
-	(*parent).result = Unknown
 	(*parent).token = new(Operator)
 	(*parent).token.AssignToken((*tokens)[0])
 	*tokens = (*tokens)[1:]
 	if (*parent).token.GetToken() == '+' {
 		(*parent).right = &LogicNode{}
-		(*parent).right.result = Unknown
-		(*parent).right.token = new(symbol)
+		(*parent).right.token = new(Symbol)
 		(*parent).right.token.AssignToken((*tokens)[0])
-		(*ref)[(*parent).right.token.GetToken()] = append((*ref)[(*parent).right.token.GetToken()], (*parent).right)
 		(*parent).right.parent = (*parent)
 		*tokens = (*tokens)[1:]
 	} else {
-		parseTree(&(*parent).right, tokens, ref)
+		parseTree(&(*parent).right, tokens)
 		(*parent).right.parent = (*parent)
 	}
 }
 
-func parseTree(parent **LogicNode, tokens *[]string, ref *map[byte][]*LogicNode) {
+func parseTree(parent **LogicNode, tokens *[]string) {
 	if len(*tokens) == 0 {
 		log.Fatalf("no tokens were found\n")
 	}
 	*parent = &LogicNode{}
-	(*parent).result = Unknown
-	(*parent).token = &symbol{}
+	(*parent).token = new(Symbol)
 	(*parent).token.AssignToken((*tokens)[0])
-	(*ref)[(*parent).token.GetToken()] = append((*ref)[(*parent).token.GetToken()], *parent)
 	*tokens = (*tokens)[1:]
 	for len(*tokens) != 0 {
 		temp := *parent
-		parseNode(parent, tokens, ref)
+		parseNode(parent, tokens)
 		(*parent).left = temp
 		if temp != nil {
 			temp.parent = (*parent)
@@ -180,30 +66,51 @@ func parseTree(parent **LogicNode, tokens *[]string, ref *map[byte][]*LogicNode)
 	}
 }
 
-func copyLogicNode(node *LogicNode, ref *map[byte][]*LogicNode) *LogicNode {
+func copyLogicNode(node *LogicNode) *LogicNode {
 	newNode := &LogicNode{}
-	newNode.result = Unknown
 	newNode.token = node.token.CopyToken()
 	if node.left != nil {
-		newNode.left = copyLogicNode(node.left, ref)
+		newNode.left = copyLogicNode(node.left)
 		newNode.left.parent = newNode
 	}
 	if node.right != nil {
-		newNode.right = copyLogicNode(node.right, ref)
+		newNode.right = copyLogicNode(node.right)
 		newNode.right.parent = newNode
-	}
-	if node.left == nil && node.right == nil {
-		(*ref)[newNode.token.GetToken()] = append((*ref)[newNode.token.GetToken()], newNode)
 	}
 	return newNode
 }
 
 //Input : input files
 type Input struct {
-	rules    []statement
-	facts    []symbol
-	query    []symbol
+	rules    []Statement
+	facts    []Symbol
+	query    []Symbol
 	refSheet map[byte][]*LogicNode
+}
+
+func separateStringsToTokens(str string) []string {
+	tokens := make([]string, 0)
+	for i := range str {
+		if str[i] == '+' || str[i] == '|' || str[i] == '^' || str[i] == '!' || ('A' <= str[i] && str[i] <= 'Z') {
+			tokens = append(tokens, string(str[i]))
+		} else if str[i] == '(' {
+			start := i
+			c := 0
+			for i != len(str) {
+				if str[i] == '(' {
+					c++
+				} else if str[i] == ')' {
+					c--
+				}
+				i++
+				if c == 0 {
+					break
+				}
+			}
+			tokens = append(tokens, str[start:i])
+		}
+	}
+	return tokens
 }
 
 //ParseFile : runs read file and parses.
@@ -225,11 +132,11 @@ func ParseFile(path string) Input {
 			continue
 		} else if line[0] == '=' {
 			for i := 1; i < len(line); i++ {
-				result.facts = append(result.facts, symbol{line[i], false})
+				result.facts = append(result.facts, Symbol(line[i]))
 			}
 		} else if line[0] == '?' {
 			for i := 1; i < len(line); i++ {
-				result.query = append(result.query, symbol{line[i], false})
+				result.query = append(result.query, Symbol(line[i]))
 			}
 		} else {
 			var eq []string
@@ -246,31 +153,25 @@ func ParseFile(path string) Input {
 			} else {
 				log.Fatalf("incorrect syntex : %s\n", line)
 			}
-			var prop statement
-			var contr statement
-			spearteByNodes := regexp.MustCompile("[+|^]|[^+|^]*").FindAllString
-			//split as expr, conlcusion.
-			tokens := spearteByNodes(eq[0], -1)
-			parseTree(&prop.expr.root, &tokens, &result.refSheet)
-			tokens = spearteByNodes(eq[1], -1)
-			parseTree(&prop.concl.root, &tokens, &result.refSheet)
-			prop.stateType = proposition
+			var prop Statement
+			var contr Statement
+			tokens := separateStringsToTokens(eq[0])
+			parseTree(&prop.expr.root, &tokens)
+			tokens = separateStringsToTokens(eq[1])
+			parseTree(&prop.concl.root, &tokens)
 			result.rules = append(result.rules, prop)
 			//create contrapositive by copying previous proposition.
-			contr.expr.root = copyLogicNode(prop.concl.root, &result.refSheet)
-			contr.concl.root = copyLogicNode(prop.expr.root, &result.refSheet)
-			contr.stateType = contrapositive
+			contr.expr.root = copyLogicNode(prop.concl.root)
+			contr.concl.root = copyLogicNode(prop.expr.root)
 			result.rules = append(result.rules, contr)
 			//additional work for only-if cases.
 			if strings.Contains(line, "<=>") {
-				var prop2 statement
-				var contr2 statement
-				prop2.expr.root = copyLogicNode(prop.concl.root, &result.refSheet)
-				prop2.concl.root = copyLogicNode(prop.expr.root, &result.refSheet)
-				prop2.stateType = proposition
-				contr2.expr.root = copyLogicNode(contr.concl.root, &result.refSheet)
-				contr2.concl.root = copyLogicNode(contr.expr.root, &result.refSheet)
-				prop2.stateType = contrapositive
+				var prop2 Statement
+				var contr2 Statement
+				prop2.expr.root = copyLogicNode(prop.concl.root)
+				prop2.concl.root = copyLogicNode(prop.expr.root)
+				contr2.expr.root = copyLogicNode(contr.concl.root)
+				contr2.concl.root = copyLogicNode(contr.expr.root)
 				result.rules = append(result.rules, prop2)
 				result.rules = append(result.rules, contr2)
 			}
